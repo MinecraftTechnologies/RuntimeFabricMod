@@ -16,10 +16,10 @@
 
 ### Доп. информация
 Тестировалось на данных версиях:
-  	- fabric-loader = 0.18.4
-  	- asm_version = 9.9
- 		- mixin_version = 0.17.0+mixin.0.8.7
- 		- mixin_extras_version = 0.5.0
+  	- fabric-loader = 0.18.4  
+  	- asm_version = 9.9  
+ 		- mixin_version = 0.17.0+mixin.0.8.7  
+ 		- mixin_extras_version = 0.5.0  
 
 ## Ссылки
 
