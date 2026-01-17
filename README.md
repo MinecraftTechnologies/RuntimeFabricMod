@@ -49,7 +49,8 @@ java -jar GenerateHeaders.jar input-jar mod.jar jar.h
 
 ### Компиляция .dll
 
-Перенесите полученные файлы заголовков (injector.h, jar.h) в папку `jvmwork\injecting_classes`.
+Перенесите полученные файлы заголовков (injector.h, jar.h) в папку `dll\injecting_classes`.  
+Укажите путь до java в файле `CMakeLists.txt`
  
 Откройте проект библиотеки в CLion или VisualStudio и выполните Release Build.
 В папке `Release` будет .dll файл.
