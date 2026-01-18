@@ -795,9 +795,10 @@ public class Injection extends URLStreamHandler {
 				MethodNode beforeMethod = before.methods.get(i);
 				MethodNode m2 = beforeNormalized.get(i);
 
-				if (compareMethods(m1, m2)) {
+				if (!alreadyUsedMethods.contains(beforeMethod.name) && compareMethods(m1, m2)) {
 					renamedMethods.put(targetMethod.name, beforeMethod.name);
 					targetMethod.name = beforeMethod.name;
+					alreadyUsedMethods.add(beforeMethod.name);
 
 					break;
 				}
@@ -1040,6 +1041,40 @@ public class Injection extends URLStreamHandler {
 	public static boolean compareMethods(MethodNode m1, MethodNode m2) {
 		InsnList i1 = m1.instructions;
 		InsnList i2 = m2.instructions;
+
+		boolean annotations1 = m1.visibleAnnotations != null;
+		boolean annotations2 = m2.visibleAnnotations != null;
+
+		if (annotations1 != annotations2) {
+			return false;
+		}
+
+		if (annotations1) {
+			String classMixinFirst = null;
+			String classMixinSecond = null;
+
+			for (AnnotationNode annotation : m1.visibleAnnotations) {
+				if (!annotation.desc.equals("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;")) {
+					continue;
+				}
+
+				classMixinFirst = (String) annotation.values.get(1);
+				break;
+			}
+
+			for (AnnotationNode annotation : m2.visibleAnnotations) {
+				if (!annotation.desc.equals("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;")) {
+					continue;
+				}
+
+				classMixinSecond = (String) annotation.values.get(1);
+				break;
+			}
+
+			if (classMixinFirst != null && !classMixinFirst.equalsIgnoreCase(classMixinSecond)) {
+				return false;
+			}
+		}
 
 		if (i1.size() != i2.size()) {
 			return false;
