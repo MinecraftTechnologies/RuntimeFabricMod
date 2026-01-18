@@ -110,6 +110,8 @@ public class Injection extends URLStreamHandler {
 	public static Constructor<?> urlMemoryConnectionConstructor = null;
 	public static Map<String, byte[]> mixinsMap = new HashMap<>();
 	public static String mixinRefMap = null;
+	public static Constructor<ClassWriter> classWriterConstructor = null;
+	public static ClassLoader classLoader = null;
 
 	public Injection() {
 		INSTANCE = this;
@@ -134,18 +136,32 @@ public class Injection extends URLStreamHandler {
 		try {
 			new Injection();
 
-			ClassLoader loader = Injection.class.getClassLoader();
+			classLoader = Injection.class.getClassLoader();
 
-			System.out.println("[Injector] ClassLoader -> " + loader.getClass().getName());
+			System.out.println("[Injector] ClassLoader -> " + classLoader.getClass().getName());
 
-			if (!loader.getClass().getName().endsWith("KnotClassLoader")) {
+			if (!classLoader.getClass().getName().endsWith("KnotClassLoader")) {
 				System.out.println("[Injector] Error, loaded by other classloader, not KnotClassLoader. Check native load method.");
 				System.exit(0);
 			}
 
-			Field delegate = loader.getClass().getDeclaredField("delegate");
+			// Нужно, потому что когда происходит COMPUTE_FRAMES
+			// классрайтер пытается взять классы под ремапом из
+			// своего лоадера (который его загрузил), а их там нема
+			byte[] bytes = generateFixedWriter();
+			loadClasses(new byte[][] {bytes}, clazz -> {
+				try {
+					//noinspection unchecked
+					classWriterConstructor = (Constructor<ClassWriter>) clazz.getDeclaredConstructor(int.class, ClassLoader.class);
+					System.out.println("[Injector] Generated and loaded fixed classWriter.");
+				} catch (NoSuchMethodException e) {
+					throw new RuntimeException(e);
+				}
+			});
+
+			Field delegate = classLoader.getClass().getDeclaredField("delegate");
 			delegate.setAccessible(true);
-			Object knotClassDelegate = delegate.get(loader);
+			Object knotClassDelegate = delegate.get(classLoader);
 
 			loadClasses(new byte[][]{generateMemoryURLConnection()}, clazz -> {
 				try {
@@ -531,6 +547,47 @@ public class Injection extends URLStreamHandler {
 		return clazzAfterMixins;
 	}
 
+	public static byte[] generateFixedWriter() {
+		ClassWriter cw = new ClassWriter(0);
+		String writerName = "ru/magnus0x11/injection/FixedClassWriter";
+
+		cw.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC + Opcodes.ACC_SUPER, writerName, null, "org/objectweb/asm/ClassWriter", null);
+
+		// Добавляем поле для хранения лоадера
+		cw.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_FINAL, "loader", "Ljava/lang/ClassLoader;", null, null).visitEnd();
+
+		// Конструктор: public FixedClassWriter(int flags, ClassLoader loader)
+		{
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "(ILjava/lang/ClassLoader;)V", null, null);
+			mv.visitCode();
+			mv.visitVarInsn(Opcodes.ALOAD, 0); // this
+			mv.visitVarInsn(Opcodes.ILOAD, 1); // flags
+			mv.visitMethodInsn(Opcodes.INVOKESPECIAL, "org/objectweb/asm/ClassWriter", "<init>", "(I)V", false);
+
+			mv.visitVarInsn(Opcodes.ALOAD, 0); // this
+			mv.visitVarInsn(Opcodes.ALOAD, 2); // loader
+			mv.visitFieldInsn(Opcodes.PUTFIELD, writerName, "loader", "Ljava/lang/ClassLoader;");
+
+			mv.visitInsn(Opcodes.RETURN);
+			mv.visitMaxs(3, 3);
+			mv.visitEnd();
+		}
+
+		// Переопределяем getClassLoader()
+		{
+			MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PROTECTED, "getClassLoader", "()Ljava/lang/ClassLoader;", null, null);
+			mv.visitCode();
+			mv.visitVarInsn(Opcodes.ALOAD, 0); // this
+			mv.visitFieldInsn(Opcodes.GETFIELD, writerName, "loader", "Ljava/lang/ClassLoader;");
+			mv.visitInsn(Opcodes.ARETURN);
+			mv.visitMaxs(1, 1);
+			mv.visitEnd();
+		}
+
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
 	// public class MemoryURLConnection extends URLConnection {
 	//    private final byte[] data;
 	//
@@ -794,13 +851,15 @@ public class Injection extends URLStreamHandler {
 	}
 
 	public static byte[] toByteArray(ClassNode targetClass, boolean flags) throws Exception {
-		ClassWriter cw = new ClassWriter(flags ? ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES : 0);
+		classWriterConstructor.setAccessible(true);
+		ClassWriter cw = classWriterConstructor.newInstance(flags ? ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES : 0, classLoader);
 		targetClass.accept(cw);
 		return cw.toByteArray();
 	}
 
-	private static byte[] generateExternalClass(String generatedClassName, ClassNode targetClass, List<MethodNode> methods) {
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+	private static byte[] generateExternalClass(String generatedClassName, ClassNode targetClass, List<MethodNode> methods) throws InvocationTargetException, InstantiationException, IllegalAccessException {
+		classWriterConstructor.setAccessible(true);
+		ClassWriter cw = classWriterConstructor.newInstance(ClassWriter.COMPUTE_FRAMES, classLoader);
 		cw.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, generatedClassName, null, "java/lang/Object", null);
 
 		// Создаем статическую инициализацию MethodHandles
