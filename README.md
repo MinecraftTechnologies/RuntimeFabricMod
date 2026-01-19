@@ -7,6 +7,7 @@
 ✅ Подгрузка мода в runtime  
 ✅ Runtime Mixin + MixinExtras  
 ✅ Mixin Refmap работает корректно  
+✅ @Shadow работает корректно
 
 # Проблемы
 ❌ AccessWidener на данный момент недоступен  
